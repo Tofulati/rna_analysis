@@ -51,12 +51,12 @@ const RNAModificationAnalyzer = () => {
       try {
         setIsLoading(true);
         
-        const response1 = await fetch('/output/gene_data_MR01_1.json');
+        const response1 = await fetch('/src/output/gene_data_MR01_1.json');
         if (!response1.ok) throw new Error('Failed to load MR01_1 data');
         const data1 = await response1.json();
         setGeneDataMR01_1(data1);
         
-        const response2 = await fetch('/output/gene_data_MR01_2.json');
+        const response2 = await fetch('/src/output/gene_data_MR01_2.json');
         if (!response2.ok) throw new Error('Failed to load MR01_2 data');
         const data2 = await response2.json();
         setGeneDataMR01_2(data2);
