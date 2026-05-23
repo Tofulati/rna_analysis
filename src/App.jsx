@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Line, LineChart } from 'recharts';
 import { TrendingUp, Search, Database } from 'lucide-react';
+import { useGeneData } from './useGeneData';
 
 // Linear regression calculation
 const calculateLinearRegression = (data, xKey, yKey) => {
@@ -36,41 +37,13 @@ const calculateLinearRegression = (data, xKey, yKey) => {
 };
 
 const RNAModificationAnalyzer = () => {
-  const [geneDataMR01_1, setGeneDataMR01_1] = useState([]);
-  const [geneDataMR01_2, setGeneDataMR01_2] = useState([]);
   const [selectedSample, setSelectedSample] = useState('MR01_1');
   const [selectedRegion, setSelectedRegion] = useState('utr5');
   const [selectedModType, setSelectedModType] = useState('ai');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGene, setSelectedGene] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
   
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        
-        const response1 = await fetch('/output/gene_data_MR01_1.json');
-        if (!response1.ok) throw new Error('Failed to load MR01_1 data');
-        const data1 = await response1.json();
-        setGeneDataMR01_1(data1);
-        
-        const response2 = await fetch('/output/gene_data_MR01_2.json');
-        if (!response2.ok) throw new Error('Failed to load MR01_2 data');
-        const data2 = await response2.json();
-        setGeneDataMR01_2(data2);
-        
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Error loading data:', error);
-        setLoadError(error.message);
-        setIsLoading(false);
-      }
-    };
-    
-    loadData();
-  }, []);
+  const { geneDataMR01_1, geneDataMR01_2, isLoading, loadError } = useGeneData();
   
   const geneData = selectedSample === 'MR01_1' ? geneDataMR01_1 : geneDataMR01_2;
   
