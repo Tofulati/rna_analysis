@@ -1,10 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 
-// Mirrors what load_analyze.py does locally —
-// fetches all rows for both samples and reshapes into
-// the same structure the React component expects.
-
 function extractMean(val) {
   if (typeof val === 'number') return val
   if (typeof val === 'string') {
@@ -14,22 +10,36 @@ function extractMean(val) {
   return 0
 }
 
+function regionKey(feature) {
+  return feature.toLowerCase().replace(/_/g, '')
+}
+
 function processGeneRows(rows, sample) {
-  // rows = all DB rows for one gene, both samples present in each row
-  const cpkCol    = sample === 'MR01_1' ? 'cpk_mr01_1'   : 'cpk_mr01_2'
-  const mrCol     = sample === 'MR01_1' ? 'mr01_1'        : 'mr01_2'
-  const countCol  = sample === 'MR01_1' ? 'count_mr01_1'  : 'count_mr01_2'
+  const cpkCol   = sample === 'MR01_1' ? 'cpk_mr01_1'  : 'cpk_mr01_2'
+  const mrCol    = sample === 'MR01_1' ? 'mr01_1'       : 'mr01_2'
+  const countCol = sample === 'MR01_1' ? 'count_mr01_1' : 'count_mr01_2'
 
   const regions = ['UTR_5', 'UTR_3', 'Exon', 'Intron']
-  const mods    = ['Unmod', 'm6A', 'Inosine']
-
-  const stats = {}
+  const stats   = {}
   const rawData = []
 
-  for (const row of rows) {
-    const regionKey = row.feature.toLowerCase().replace('_', '')
+  // Initialize all keys to 0 so nothing is undefined
+  for (const region of regions) {
+    const rk = regionKey(region)
+    stats[`${rk}_cpm`]         = 0
+    stats[`${rk}_ai_rate`]     = 0
+    stats[`${rk}_m6a_rate`]    = 0
+    stats[`${rk}_unmod_rate`]  = 0
+    stats[`${rk}_either_rate`] = 0
+  }
 
-    // raw data table (mirrors raw_data array in old JSON)
+  // Accumulate CPK values per region for averaging
+  const cpkAccum = {}
+
+  for (const row of rows) {
+    const rk = regionKey(row.feature)
+
+    // Build raw data table
     rawData.push({
       feature:      row.feature,
       modification: row.modification,
@@ -40,38 +50,55 @@ function processGeneRows(rows, sample) {
 
     if (!regions.includes(row.feature)) continue
 
-    // CPM
-    const cpkKey = `${regionKey}_cpm`
-    if (!stats[cpkKey]) stats[cpkKey] = []
-    if ((row[cpkCol] ?? 0) > 0) stats[cpkKey].push(row[cpkCol])
+    // Accumulate CPK
+    const cpk = row[cpkCol] ?? 0
+    if (cpk > 0) {
+      if (!cpkAccum[rk]) cpkAccum[rk] = []
+      cpkAccum[rk].push(cpk)
+    }
 
     // Rates
     const rate = extractMean(row[mrCol])
-    if (row.modification === 'Inosine') stats[`${regionKey}_ai_rate`]   = rate
-    if (row.modification === 'm6A')     stats[`${regionKey}_m6a_rate`]  = rate
-    if (row.modification === 'Unmod')   stats[`${regionKey}_unmod_rate`] = rate
+    if (row.modification === 'Inosine') stats[`${rk}_ai_rate`]    = rate
+    if (row.modification === 'm6A')     stats[`${rk}_m6a_rate`]   = rate
+    if (row.modification === 'Unmod')   stats[`${rk}_unmod_rate`] = rate
   }
 
-  // Collapse CPM arrays to means
+  // Collapse CPK accumulators and compute either rate
   for (const region of regions) {
-    const rk     = region.toLowerCase().replace('_', '')
-    const cpmKey = `${rk}_cpm`
-    stats[cpmKey] = stats[cpmKey]?.length
-      ? stats[cpmKey].reduce((a, b) => a + b, 0) / stats[cpmKey].length
+    const rk  = regionKey(region)
+    const arr = cpkAccum[rk] ?? []
+    stats[`${rk}_cpm`] = arr.length
+      ? arr.reduce((a, b) => a + b, 0) / arr.length
       : 0
 
-    // Either rate
-    const ai  = stats[`${rk}_ai_rate`]  ?? 0
-    const m6a = stats[`${rk}_m6a_rate`] ?? 0
-    stats[`${rk}_either_rate`] = Math.min(ai + m6a, 1.0)
+    stats[`${rk}_either_rate`] = Math.min(
+      (stats[`${rk}_ai_rate`] ?? 0) + (stats[`${rk}_m6a_rate`] ?? 0),
+      1.0
+    )
   }
 
-  // Totals
-  const cpmVals  = regions.map(r => stats[`${r.toLowerCase().replace('_','')} _cpm`]).filter(v => v > 0)
-  stats.total_cpm       = cpmVals.length ? cpmVals.reduce((a,b)=>a+b,0)/cpmVals.length : 0
-  stats.total_ai_rate   = regions.map(r=>stats[`${r.toLowerCase().replace('_','')} _ai_rate`]??0).reduce((a,b)=>a+b,0)/regions.length
-  stats.total_m6a_rate  = regions.map(r=>stats[`${r.toLowerCase().replace('_','')} _m6a_rate`]??0).reduce((a,b)=>a+b,0)/regions.length
-  stats.total_either_rate = Math.min(stats.total_ai_rate + stats.total_m6a_rate, 1.0)
+  // Totals — average across all regions
+  const cpmVals = regions
+    .map(r => stats[`${regionKey(r)}_cpm`])
+    .filter(v => v > 0)
+
+  stats.total_cpm = cpmVals.length
+    ? cpmVals.reduce((a, b) => a + b, 0) / cpmVals.length
+    : 0
+
+  stats.total_ai_rate = regions
+    .map(r => stats[`${regionKey(r)}_ai_rate`] ?? 0)
+    .reduce((a, b) => a + b, 0) / regions.length
+
+  stats.total_m6a_rate = regions
+    .map(r => stats[`${regionKey(r)}_m6a_rate`] ?? 0)
+    .reduce((a, b) => a + b, 0) / regions.length
+
+  stats.total_either_rate = Math.min(
+    stats.total_ai_rate + stats.total_m6a_rate,
+    1.0
+  )
 
   return { stats, rawData }
 }
@@ -87,7 +114,16 @@ export function useGeneData() {
       try {
         setIsLoading(true)
 
-        // Fetch all rows in batches (Supabase default limit is 1000)
+        // Return cached data immediately if available
+        const cached = sessionStorage.getItem('geneData')
+        if (cached) {
+          const { genes1, genes2 } = JSON.parse(cached)
+          setGeneDataMR01_1(genes1)
+          setGeneDataMR01_2(genes2)
+          setIsLoading(false)
+          return
+        }
+
         let allRows = []
         let offset  = 0
         const batchSize = 1000
@@ -106,14 +142,12 @@ export function useGeneData() {
           offset += batchSize
         }
 
-        // Group rows by gene
         const byGene = {}
         for (const row of allRows) {
           if (!byGene[row.gene]) byGene[row.gene] = []
           byGene[row.gene].push(row)
         }
 
-        // Build per-sample gene arrays (mirrors old JSON structure)
         const genes1 = []
         const genes2 = []
         let id = 1
@@ -125,6 +159,13 @@ export function useGeneData() {
           genes1.push({ id, name: geneName, raw_data: rd1, ...s1 })
           genes2.push({ id, name: geneName, raw_data: rd2, ...s2 })
           id++
+        }
+
+        // Cache for this session so reload is instant
+        try {
+          sessionStorage.setItem('geneData', JSON.stringify({ genes1, genes2 }))
+        } catch (e) {
+          // sessionStorage quota exceeded — skip caching, not fatal
         }
 
         setGeneDataMR01_1(genes1)
