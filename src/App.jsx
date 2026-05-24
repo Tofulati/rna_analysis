@@ -152,7 +152,7 @@ export default function RNAModificationAnalyzer() {
 
   if (isLoading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, color: C.textMuted, fontSize: '0.9rem', fontFamily: 'system-ui, sans-serif', letterSpacing: '0.05em' }}>
-      Loading…
+      Pulling data from database...
     </div>
   );
 
@@ -353,6 +353,28 @@ export default function RNAModificationAnalyzer() {
             Select a gene to view raw data.
           </div>
         )}
+
+        {/* Footer */}
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: '1rem 2rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <Database size={12} style={{ color: C.textDim }} />
+          <a
+            href="https://github.com/Tofulati/rna_analysis/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: C.textDim,
+              fontSize: '0.75rem',
+              letterSpacing: '0.05em',
+              textDecoration: 'none',
+              fontFamily: 'inherit',
+            }}
+            onMouseEnter={e => e.target.style.color = C.text}
+            onMouseLeave={e => e.target.style.color = C.textDim}
+          >
+            github.com/Tofulati/rna_analysis
+          </a>
+        </div>
+
       </div>
     </div>
   );
